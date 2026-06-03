@@ -36,6 +36,12 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Spring JDBC (for JdbcTemplate) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

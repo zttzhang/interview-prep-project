@@ -78,8 +78,6 @@ public class RedisConfig {
     }
 
     private Jackson2JsonRedisSerializer<Object> createJsonSerializer() {
-        Jackson2JsonRedisSerializer<Object> serializer = new Jackson2JsonRedisSerializer<>(Object.class);
-        
         ObjectMapper mapper = new ObjectMapper();
         // 设置可见性，让序列化器能访问 private 字段
         mapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
@@ -89,7 +87,8 @@ public class RedisConfig {
             ObjectMapper.DefaultTyping.NON_FINAL
         );
         
-        serializer.setObjectMapper(mapper);
+        // 使用构造函数注入 ObjectMapper，避免使用已过时的 setObjectMapper 方法
+        Jackson2JsonRedisSerializer<Object> serializer = new Jackson2JsonRedisSerializer<>(mapper, Object.class);
         return serializer;
     }
 }
