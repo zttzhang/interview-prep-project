@@ -1,0 +1,221 @@
+# =====================================================
+# Kubernetes Deployment 配置 - 滚动更新策略
+# 【面试考点】零停机发布的配置方法
+# =====================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: interview-app
+  namespace: production
+  labels:
+    app: interview-app
+    version: v1
+spec:
+  # 副本数
+  replicas: 3
+  
+  # 选择器
+  selector:
+    matchLabels:
+      app: interview-app
+  
+  # 滚动更新策略
+  # 【面试考点】这是实现零停机发布的关键配置
+  strategy:
+    type: RollingUpdate
+    
+    # ========== 【面试考点】滚动更新参数详解 ==========
+    rollingUpdate:
+      # maxSurge：更新过程中最多可以创建的额外Pod数量
+      # 【面试追问】这个值是什么意思？
+      # → 答：假设 replicas=3，maxSurge=1
+      # → 答：更新过程中，最多可以有 3+1=4 个Pod同时存在
+      # → 答：新的Pod创建成功后才删除旧的Pod
+      maxSurge: 1
+      
+      # maxUnavailable：更新过程中最多可以有多少个Pod不可用
+      # 【面试追问】这个值是什么意思？
+      # → 答：假设 replicas=3，maxUnavailable=0
+      # → 答：更新过程中，至少有 3-0=3 个Pod在服务
+      # → 答：零停机发布的关键配置！
+      maxUnavailable: 0
+      
+      # ========== 【面试追问】参数组合效果 ==========
+      # maxSurge=1, maxUnavailable=0（推荐）
+      # → 先创建新Pod，再删除旧Pod
+      # → 始终保持足量Pod在服务
+      # → 资源消耗略高，但服务不中断
+      
+      # maxSurge=0, maxUnavailable=1
+      # → 先删除旧Pod，再创建新Pod
+      # → 短暂容量下降，但资源消耗少
+      # → 适合资源受限的场景
+      
+      # maxSurge=25%, maxUnavailable=25%
+      # → 百分比方式，更灵活
+      # → 适合大规模集群
+
+  # Pod 模板
+  template:
+    metadata:
+      labels:
+        app: interview-app
+        version: v1
+    spec:
+      # 容器配置
+      containers:
+      - name: interview-app
+        image: interview-app:1.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        
+        # 环境变量
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "production"
+        - name: JAVA_OPTS
+          value: "-Xms256m -Xmx512m -XX:+UseG1GC"
+        
+        # 资源配置
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        
+        # 健康检查
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      
+      # 亲和性配置（可选）
+      # tolerations（污点容忍）
+      # nodeSelector（节点选择）
+      
+      # 优雅终止
+      # 【面试考点】为什么需要 terminationGracePeriodSeconds？
+      # → 答：Pod被删除时，给应用时间处理完现有请求
+      # → 答：Spring Boot 默认 30秒，这里可以调整
+      terminationGracePeriodSeconds: 60
+
+---
+# =====================================================
+# HPA（Horizontal Pod Autoscaler）自动扩缩容
+# 【面试考点】根据CPU/内存自动调整Pod数量
+# =====================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: interview-app-hpa
+  namespace: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: interview-app
+  
+  # 副本数范围
+  minReplicas: 2
+  maxReplicas: 10
+  
+  # 扩缩容指标
+  metrics:
+  # CPU利用率
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        # 【面试考点】为什么 targetAverageUtilization 是 70%？
+        # → 答：预留30%余量应对突发流量
+        # → 答：避免刚好达到阈值时频繁扩缩容
+        averageUtilization: 70
+  
+  # 内存利用率（可选）
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  
+  # 扩缩容行为（K8s 1.18+）
+  behavior:
+    scaleDown:
+      # 缩容冷却时间
+      stabilizationWindowSeconds: 300  # 等待5分钟，避免抖动
+      policies:
+      - type: Percent
+        value: 10                      # 每次最多缩容10%
+        periodSeconds: 60
+    scaleUp:
+      # 扩容更快，没有冷却时间
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100                     # 扩容可以更激进
+        periodSeconds: 15
+      - type: Pods
+        value: 4                       # 或每次最多扩4个
+        periodSeconds: 15
+
+---
+# =====================================================
+# ConfigMap 配置管理
+# 【面试考点】配置和代码分离
+# =====================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: interview-app-config
+  namespace: production
+data:
+  application.yml: |
+    spring:
+      profiles:
+        active: production
+      datasource:
+        url: jdbc:postgresql://postgres:5432/interview_prep
+        username: interview
+      redis:
+        host: redis
+        port: 6379
+      kafka:
+        bootstrap-servers: kafka:9092
+    logging:
+      level:
+        root: INFO
+        com.interview: DEBUG
+
+---
+# =====================================================
+# Secret（敏感配置）
+# 【面试考点】密码、Token等敏感信息用Secret
+# =====================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: interview-app-secret
+  namespace: production
+type: Opaque
+stringData:
+  # 【面试考点】为什么用 base64 而不是明文？
+  # → 答：base64 不是加密，只是编码，可以轻易解码
+  # → 答：生产环境应该用 sealed-secrets、vault 等加密方案
+  # → 答：或者使用 K8s KMS 插件加密存储
+  DB_PASSWORD: aW50ZXJ2aWV3MTIz   # echo -n "interview123" | base64
+  JWT_SECRET: c2VjcmV0LWtleS1mb3Itand0

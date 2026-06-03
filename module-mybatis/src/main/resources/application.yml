@@ -1,0 +1,63 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: interview-prep-project
+  
+  # PostgreSQL 配置
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/interview_prep
+    username: interview
+    password: interview123
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+  
+  # Redis 配置
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+  
+  # Kafka 配置
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: interview-consumer-group
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    producer:
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+
+# MyBatis Plus 配置
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  mapper-locations: classpath*:mapper/**/*.xml
+
+# 日志配置
+logging:
+  level:
+    com.interview: DEBUG
+    org.springframework.kafka: INFO
+    org.apache.kafka: WARN

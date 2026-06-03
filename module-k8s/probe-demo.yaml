@@ -1,0 +1,130 @@
+# =====================================================
+# Kubernetes 探针配置详解
+# 【面试考点】三种探针的区别和适用场景
+# =====================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: interview-app
+  labels:
+    app: interview-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: interview-app
+  template:
+    metadata:
+      labels:
+        app: interview-app
+    spec:
+      containers:
+      - name: interview-app
+        image: interview-app:1.0.0
+        ports:
+        - containerPort: 8080
+        
+        # =====================================================
+        # 【面试考点】存活探针 (livenessProbe)
+        # =====================================================
+        # 作用：检测应用是否存活
+        # 失败后：重启容器
+        # 适用场景：应用进程存在但已假死（死锁、OOM、无限循环）
+        #
+        # 【面试追问】为什么不直接用进程状态判断？
+        # → 答：进程在但业务已死，比如死锁、连接池耗尽、无限循环
+        # → 答：进程存在不代表能正常响应请求
+        #
+        # 【面试追问】initialDelaySeconds 为什么是30秒？
+        # → 答：应用启动需要时间（如Spring Boot启动慢），过早检测会误杀
+        # → 答：应该设置大于应用启动时间
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 30   # 【关键】等待应用启动后再开始检测
+          periodSeconds: 10          # 每10秒检测一次
+          timeoutSeconds: 5          # 超时5秒算失败
+          successThreshold: 1        # 成功1次就认为健康（必须是1）
+          failureThreshold: 3        # 连续失败3次才重启（避免抖动）
+
+        # =====================================================
+        # 【面试考点】就绪探针 (readinessProbe)
+        # =====================================================
+        # 作用：检测应用是否能处理请求
+        # 失败后：从Service移除（不再分配流量），但容器不重启
+        # 适用场景：应用启动中、预热中、依赖服务不可用、过载
+        #
+        # 【面试追问】liveness 和 readiness 的关键区别？
+        # → 答：liveness 失败 → 重启容器（杀死后重建）
+        # → 答：readiness 失败 → 摘除流量（容器还在，但不处理请求）
+        #
+        # 【面试追问】什么场景适合用 readinessProbe？
+        # → 答：应用启动时（需要warm-up时间）
+        # → 答：依赖数据库/Redis未连接
+        # → 答：CPU/内存过载，暂时无法处理请求
+        # → 答：连接池耗尽，需要降载
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 10   # 就绪检测可以比存活检测早开始
+          periodSeconds: 5          # 检测更频繁，及时发现就绪
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2        # 失败2次就摘除（恢复敏感）
+
+        # =====================================================
+        # 【面试考点】启动探针 (startupProbe) - K8s 1.16+
+        # =====================================================
+        # 作用：保护慢启动应用
+        # 成功前：禁用 liveness 和 readiness 探针
+        # 失败后：重启容器
+        # 适用场景：Java应用启动慢（60s+）、大型框架初始化、第三方SDK预热
+        #
+        # 【面试追问】为什么需要 startupProbe？
+        # → 答：应用启动需要60秒，如果用 livenessProbe initialDelaySeconds: 30
+        # → 答：会在应用还未就绪时就开始检测，容易误杀
+        # → 答：startupProbe 成功后才会启动 liveness 和 readiness 探针
+        #
+        # 【面试追问】failureThreshold: 30, periodSeconds: 10 是什么意思？
+        # → 答：最多检测30次，每次间隔10秒
+        # → 答：总共可以等待 30 * 10 = 300秒（5分钟）
+        # → 答：足够大多数应用启动
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          failureThreshold: 30   # 【关键】最多尝试30次
+          periodSeconds: 10      # 每10秒检测一次
+          # startupProbe 成功后，才会启动 liveness 和 readiness 探针
+
+        # 资源配置（生产环境建议设置）
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+---
+# =====================================================
+# Service 配置
+# =====================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: interview-app-svc
+spec:
+  selector:
+    app: interview-app
+  ports:
+  - port: 80
+    targetPort: 8080
+  # Service 类型
+  # ClusterIP：集群内部访问（默认）
+  # NodePort：节点端口外部访问
+  # LoadBalancer：云厂商负载均衡
+  type: ClusterIP
