@@ -1,0 +1,377 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+    【面试考点】UserMapper XML 映射文件
+    namespace 必须与 Mapper 接口的全限定类名完全一致，否则 MyBatis 找不到对应的方法。
+
+    本文件演示 MyBatis 动态 SQL 的核心标签：
+    1. <if> + <where>  — 动态条件查询
+    2. <foreach>       — IN 查询 / 批量插入
+    3. <resultMap> + <collection> — 一对多关联查询
+    4. <set> + <if>    — 动态更新
+-->
+<mapper namespace="com.interview.mybatis.mapper.UserMapper">
+
+    <!--
+        ============================================================
+        ResultMap 定义
+        ============================================================
+    -->
+
+    <!--
+        【面试考点】基础 ResultMap - 解决列名与字段名不一致
+        当开启 mapUnderscoreToCamelCase=true 时，user_name → userName 自动映射，
+        但显式定义 resultMap 更清晰，也是面试中常考的写法。
+    -->
+    <resultMap id="BaseResultMap" type="com.interview.mybatis.entity.User">
+        <!-- id 标签：标记主键列，MyBatis 内部用于结果集去重（collection 合并时尤其重要） -->
+        <id     column="id"            property="id"/>
+        <result column="username"      property="username"/>
+        <result column="email"         property="email"/>
+        <result column="phone"         property="phone"/>
+        <result column="password_hash" property="passwordHash"/>
+        <result column="status"        property="status"/>
+        <result column="create_time"   property="createTime"/>
+        <result column="update_time"   property="updateTime"/>
+    </resultMap>
+
+    <!--
+        【面试考点】一对多 ResultMap - User 包含多个 Order
+        使用 <collection> 标签映射一对多关系。
+
+        关键属性说明：
+        - property="orders"：User 对象中的集合字段名（需要在 User 类中添加 List<Order> orders）
+        - ofType="com.interview.mybatis.entity.Order"：集合元素的类型
+        - column="id"：用于关联的列（传给子查询或用于结果集合并）
+
+        【面试追问】
+        Q: <collection> 有几种写法？
+        A: 1. 嵌套结果集（本例）：JOIN 查询，一次 SQL 返回所有数据，MyBatis 自动合并
+           2. 嵌套查询（N+1）：先查主表，再对每条记录发子查询
+              <collection property="orders" select="selectOrdersByUserId" column="id"/>
+              缺点：N+1 问题，但可以配合懒加载按需触发
+
+        Q: 为什么 <id> 标签很重要？
+        A: MyBatis 用 <id> 标记的列来判断是否是同一个对象（去重）。
+           在一对多查询中，同一个 user 可能出现多行（每个 order 一行），
+           MyBatis 通过 user.id 判断是同一个 User，将多个 Order 合并到同一个 User.orders 列表中。
+           如果没有 <id>，MyBatis 无法正确合并，会创建多个重复的 User 对象。
+    -->
+    <resultMap id="UserWithOrdersResultMap" type="com.interview.mybatis.entity.User"
+               extends="BaseResultMap">
+        <!--
+            <collection>：一对多关联
+            property：User 类中的字段名（List<Order> orders）
+            ofType：集合中元素的类型
+            注意：User 类需要有 List<Order> orders 字段（演示用，实际 User.java 未添加）
+        -->
+        <collection property="orders" ofType="com.interview.mybatis.entity.Order">
+            <id     column="order_id"         property="id"/>
+            <result column="order_user_id"    property="userId"/>
+            <result column="order_product_id" property="productId"/>
+            <result column="order_quantity"   property="quantity"/>
+            <result column="order_amount"     property="amount"/>
+            <result column="order_status"     property="status"/>
+            <result column="order_created_at" property="createdAt"/>
+            <result column="order_updated_at" property="updatedAt"/>
+        </collection>
+    </resultMap>
+
+    <!--
+        ============================================================
+        SQL 片段（可复用）
+        ============================================================
+    -->
+
+    <!--
+        【面试考点】<sql> 标签 - 可复用的 SQL 片段
+        避免重复写相同的列名，通过 <include refid="BaseColumns"/> 引用。
+        面试考点：减少代码重复，修改列名时只需改一处。
+    -->
+    <sql id="BaseColumns">
+        id, username, email, phone, password_hash, status, create_time, update_time
+    </sql>
+
+    <!--
+        ============================================================
+        SQL 1：动态条件查询 - <if> + <where>
+        ============================================================
+    -->
+
+    <!--
+        【面试考点 1】动态 SQL - <if> + <where> 标签
+
+        对应接口方法：selectByCondition(name, email, status)
+
+        知识点：
+        1. <where> 标签：
+           - 如果内部有内容，自动加上 WHERE 关键字
+           - 自动去掉第一个条件多余的 AND/OR
+           - 如果内部全部为空，不生成 WHERE 子句（避免 "WHERE" 孤立关键字）
+
+        2. <if test="..."> 标签：
+           - test 属性写 OGNL 表达式（Java 表达式）
+           - 字符串判空：test="name != null and name != ''"
+           - 数字判空：test="status != null"
+           - 注意：OGNL 中用 and/or（小写），不是 &&/||
+
+        【面试追问】
+        Q: <where> 和手写 WHERE 1=1 有什么区别？
+        A: WHERE 1=1 是老写法，会多一个无意义的条件，影响 SQL 可读性和某些数据库的执行计划。
+           <where> 标签更优雅，不会产生多余的条件。
+
+        Q: 如果所有条件都为 null，生成的 SQL 是什么？
+        A: SELECT id, username, ... FROM users（没有 WHERE 子句，查全表）
+    -->
+    <select id="selectByCondition" resultMap="BaseResultMap">
+        SELECT
+            <include refid="BaseColumns"/>
+        FROM users
+        <!--
+            <where> 自动处理：
+            1. 有内容时加 WHERE
+            2. 去掉第一个 AND/OR
+            3. 全空时不加 WHERE
+        -->
+        <where>
+            <if test="name != null and name != ''">
+                AND username LIKE CONCAT('%', #{name}, '%')
+            </if>
+            <if test="email != null and email != ''">
+                AND email = #{email}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+        ORDER BY id
+    </select>
+
+    <!--
+        ============================================================
+        SQL 2：IN 查询 - <foreach>
+        ============================================================
+    -->
+
+    <!--
+        【面试考点 2】<foreach> 标签 - IN 查询
+
+        对应接口方法：selectByIds(ids)
+
+        <foreach> 属性说明：
+        - collection：集合参数名（@Param("ids") 对应 "ids"）
+        - item：每次迭代的变量名
+        - open：开始字符
+        - close：结束字符
+        - separator：分隔符
+        - index：当前索引（List 是下标，Map 是 key）
+
+        生成的 SQL：
+        SELECT ... FROM users WHERE id IN (1, 2, 3, 4, 5)
+
+        【面试追问】
+        Q: IN 查询有什么性能问题？
+        A: 1. IN 列表过长（>1000）时，某些数据库（Oracle）会报错
+           2. IN 列表过长时，执行计划可能走全表扫描而非索引
+           3. 解决：分批查询，每批不超过 500 个 ID
+
+        Q: <foreach> 的 collection 属性怎么写？
+        A: - 单个 List 参数且没有 @Param：collection="list" 或 collection="collection"
+           - 有 @Param("ids")：collection="ids"
+           - 数组：collection="array"
+    -->
+    <select id="selectByIds" resultMap="BaseResultMap">
+        SELECT
+            <include refid="BaseColumns"/>
+        FROM users
+        WHERE id IN
+        <!--
+            open="("  → 生成左括号
+            close=")" → 生成右括号
+            separator="," → 每个元素之间加逗号
+            最终生成：IN (1, 2, 3)
+        -->
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+    </select>
+
+    <!--
+        ============================================================
+        SQL 3：一对多关联查询 - <resultMap> + <collection>
+        ============================================================
+    -->
+
+    <!--
+        【面试考点 3】一对多关联查询 - JOIN + <collection>
+
+        对应接口方法：selectUserWithOrders(userId)
+
+        查询一个用户及其所有订单，使用 LEFT JOIN 一次性查出所有数据，
+        MyBatis 通过 <collection> 自动将多行结果合并为 User.orders 列表。
+
+        生成的 SQL（示例）：
+        SELECT u.id, u.username, ..., o.id AS order_id, o.amount, ...
+        FROM users u
+        LEFT JOIN orders o ON u.id = o.user_id
+        WHERE u.id = 1
+
+        结果集（数据库返回 2 行）：
+        | id | username | order_id | amount |
+        | 1  | zhangsan | 101      | 8999   |
+        | 1  | zhangsan | 102      | 4799   |
+
+        MyBatis 合并后（Java 对象）：
+        User { id=1, username="zhangsan", orders=[Order{id=101}, Order{id=102}] }
+
+        【面试追问】
+        Q: 为什么要用列别名（AS order_id）？
+        A: users 和 orders 都有 id 列，不加别名会冲突，MyBatis 无法区分。
+           通过别名明确指定每列对应 resultMap 中的哪个 column。
+
+        Q: <collection> 的 N+1 写法 vs JOIN 写法，各有什么优缺点？
+        A: JOIN 写法（本例）：
+           优点：1 次 SQL，性能好
+           缺点：结果集有冗余（user 信息重复多行），数据量大时内存占用高
+           N+1 写法（嵌套查询）：
+           优点：SQL 简单，可以懒加载
+           缺点：N+1 问题（1个用户查询 + N个订单查询）
+    -->
+    <select id="selectUserWithOrders" resultMap="UserWithOrdersResultMap">
+        SELECT
+            u.id            AS id,
+            u.username      AS username,
+            u.email         AS email,
+            u.phone         AS phone,
+            u.password_hash AS password_hash,
+            u.status        AS status,
+            u.create_time   AS create_time,
+            u.update_time   AS update_time,
+            o.id            AS order_id,
+            o.user_id       AS order_user_id,
+            o.product_id    AS order_product_id,
+            o.quantity      AS order_quantity,
+            o.amount        AS order_amount,
+            o.status        AS order_status,
+            o.created_at    AS order_created_at,
+            o.updated_at    AS order_updated_at
+        FROM users u
+        LEFT JOIN orders o ON u.id = o.user_id
+        <where>
+            <if test="userId != null">
+                AND u.id = #{userId}
+            </if>
+        </where>
+        ORDER BY u.id, o.created_at DESC
+    </select>
+
+    <!--
+        ============================================================
+        SQL 4：批量插入 - <foreach> 拼接 VALUES
+        ============================================================
+    -->
+
+    <!--
+        【面试考点 4】批量插入 - <foreach> 拼接多个 VALUES
+
+        对应接口方法：batchInsert(users)
+
+        生成的 SQL：
+        INSERT INTO users (username, email, phone, status, create_time, update_time)
+        VALUES
+          ('user_0', 'user_0@test.com', '13800000000', 1, '2024-01-01', '2024-01-01'),
+          ('user_1', 'user_1@test.com', '13800000001', 1, '2024-01-01', '2024-01-01'),
+          ...
+
+        【面试追问】
+        Q: 批量插入时如何处理主键回填？
+        A: useGeneratedKeys="true" keyProperty="id" 告诉 MyBatis 回填自增主键。
+           批量插入时，MyBatis 会将生成的主键按顺序回填到 List 中每个对象的 id 字段。
+           注意：PostgreSQL 支持批量回填，MySQL 也支持（但某些版本有 Bug）。
+
+        Q: 批量插入的 SQL 长度有限制吗？
+        A: MySQL：受 max_allowed_packet 限制（默认 4MB）
+           PostgreSQL：无硬限制，但超长 SQL 会增加解析时间
+           建议：每批不超过 500-1000 条，超过则分批处理
+    -->
+    <insert id="batchInsert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO users (username, email, phone, status, create_time, update_time)
+        VALUES
+        <!--
+            separator=","：每个 VALUES 子句之间加逗号
+            item="user"：每次迭代的变量名，对应 User 对象
+        -->
+        <foreach collection="users" item="user" separator=",">
+            (
+                #{user.username},
+                #{user.email},
+                #{user.phone},
+                #{user.status},
+                #{user.createTime},
+                #{user.updateTime}
+            )
+        </foreach>
+    </insert>
+
+    <!--
+        ============================================================
+        SQL 5：动态更新 - <set> + <if>
+        ============================================================
+    -->
+
+    <!--
+        【面试考点 5】动态更新 - <set> + <if> 标签
+
+        对应接口方法：updateByCondition(user)
+
+        知识点：
+        1. <set> 标签：
+           - 自动加上 SET 关键字
+           - 自动去掉最后一个多余的逗号（这是 <set> 最重要的功能！）
+           - 如果内部全部为空，不生成 SET 子句（但这会导致 SQL 语法错误，需要业务层保证至少有一个字段）
+
+        2. 与 <where> 的对比：
+           <where> 去掉第一个多余的 AND/OR
+           <set>   去掉最后一个多余的逗号
+
+        生成的 SQL（只更新 username 和 email）：
+        UPDATE users SET username = 'zhangsan', email = 'zs@test.com' WHERE id = 1
+
+        【面试追问】
+        Q: 如果所有 <if> 都不满足，<set> 会生成什么？
+        A: 生成 "UPDATE users  WHERE id = 1"（没有 SET 子句），SQL 语法错误！
+           解决：业务层保证至少有一个字段要更新，或者加一个 update_time 作为兜底字段。
+
+        Q: <set> 和手写 SET 有什么区别？
+        A: 手写 SET 需要处理最后一个逗号问题（如 "SET username=?, email=?,"），
+           <set> 自动处理，代码更简洁。
+    -->
+    <update id="updateByCondition">
+        UPDATE users
+        <!--
+            <set> 自动：
+            1. 加上 SET 关键字
+            2. 去掉最后一个多余的逗号
+        -->
+        <set>
+            <if test="username != null and username != ''">
+                username = #{username},
+            </if>
+            <if test="email != null and email != ''">
+                email = #{email},
+            </if>
+            <if test="phone != null and phone != ''">
+                phone = #{phone},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            <!-- 兜底：始终更新 update_time，避免 <set> 内容为空导致 SQL 错误 -->
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+</mapper>

@@ -72,4 +72,69 @@ public interface UserMapper extends BaseMapper<User> {
             "WHERE username LIKE #{pattern} " +
             "</script>")
     List<User> findByUsernameLikeBind(@Param("name") String name);
+
+    // ============================================================
+    // 以下方法对应 UserMapper.xml 中的动态 SQL（P1 新增）
+    // ============================================================
+
+    /**
+     * 【面试考点】动态条件查询 - <if> + <where>
+     *
+     * 根据 name（模糊）、email（精确）、status 动态组合查询条件。
+     * SQL 写在 UserMapper.xml 中，id="selectByCondition"。
+     *
+     * @param name   用户名关键字（模糊匹配，可为 null）
+     * @param email  邮箱（精确匹配，可为 null）
+     * @param status 状态（可为 null，表示不过滤）
+     * @return 符合条件的用户列表
+     */
+    List<User> selectByCondition(
+            @Param("name") String name,
+            @Param("email") String email,
+            @Param("status") Integer status
+    );
+
+    /**
+     * 【面试考点】<foreach> IN 查询
+     *
+     * 根据多个 ID 批量查询用户。
+     * SQL 写在 UserMapper.xml 中，id="selectByIds"。
+     *
+     * @param ids 用户 ID 列表
+     * @return 用户列表
+     */
+    List<User> selectByIds(@Param("ids") List<Long> ids);
+
+    /**
+     * 【面试考点】一对多关联查询 - <resultMap> + <collection>
+     *
+     * 查询指定用户及其所有订单（LEFT JOIN orders）。
+     * SQL 写在 UserMapper.xml 中，id="selectUserWithOrders"。
+     *
+     * @param userId 用户 ID（可为 null，表示查所有用户）
+     * @return 用户列表（每个 User 对象包含 orders 集合）
+     */
+    List<User> selectUserWithOrders(@Param("userId") Long userId);
+
+    /**
+     * 【面试考点】批量插入 - <foreach> 拼接 VALUES
+     *
+     * 一条 SQL 插入多行数据，性能远优于 for 循环单条插入。
+     * SQL 写在 UserMapper.xml 中，id="batchInsert"。
+     *
+     * @param users 要插入的用户列表
+     * @return 影响行数
+     */
+    int batchInsert(@Param("users") List<User> users);
+
+    /**
+     * 【面试考点】动态更新 - <set> + <if>
+     *
+     * 只更新非 null 字段，避免覆盖其他字段为 null。
+     * SQL 写在 UserMapper.xml 中，id="updateByCondition"。
+     *
+     * @param user 包含要更新字段的用户对象（id 必须不为 null）
+     * @return 影响行数
+     */
+    int updateByCondition(User user);
 }

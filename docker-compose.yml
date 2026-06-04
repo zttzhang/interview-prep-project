@@ -1,0 +1,229 @@
+# =============================================================================
+# 【面试考点】Docker Compose 生产级配置
+#
+# 问题描述：本地开发需要快速启动完整的中间件环境（PostgreSQL + Redis + Kafka）
+# 解决思路：使用 Docker Compose 编排多容器，配置健康检查和依赖顺序
+#
+# 【对比方案】
+# ❌ 方案一（错误示范）：直接启动容器，不配置健康检查
+#    → 问题：应用启动时中间件可能还未就绪，导致连接失败
+# ✅ 方案二（正确）：配置 healthcheck + depends_on condition: service_healthy
+#    → 保证启动顺序：PostgreSQL → Redis → Kafka
+#
+# 【面试追问】
+# Q: Kafka KRaft 模式和 ZooKeeper 模式有什么区别？
+# A: KRaft 模式（Kafka 2.8+）将元数据管理内置到 Kafka 自身，
+#    消除了对 ZooKeeper 的依赖，简化了运维，提升了性能。
+#    Kafka 3.x 已将 KRaft 设为默认模式，ZooKeeper 模式将在 4.0 移除。
+#
+# Q: 为什么要设置资源限制？
+# A: 防止单个容器耗尽宿主机资源，影响其他服务。
+#    生产环境中资源限制是必须的，本地开发也应养成好习惯。
+# =============================================================================
+
+version: "3.8"
+
+services:
+  # ===========================================================================
+  # PostgreSQL 15 - 主数据库
+  # 启动顺序：第 1 个（其他服务依赖它）
+  # ===========================================================================
+  postgres:
+    image: postgres:15
+    container_name: interview-postgres
+    environment:
+      POSTGRES_DB: interview_prep
+      POSTGRES_USER: interview
+      POSTGRES_PASSWORD: interview123
+      # 【面试考点】PGDATA 指定数据目录，与 volume 挂载路径对应
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      # 数据持久化：容器重启后数据不丢失
+      - postgres-data:/var/lib/postgresql/data
+      # 初始化脚本：容器首次启动（数据卷为空）时自动执行
+      # 注意：只在数据卷为空时执行一次，后续重启不会重复执行
+      - ./init-sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      # pg_isready 检查 PostgreSQL 是否接受连接
+      # -U 指定用户，-d 指定数据库
+      test: ["CMD-SHELL", "pg_isready -U interview -d interview_prep"]
+      interval: 5s # 每 5 秒检查一次
+      timeout: 3s # 超时时间 3 秒
+      retries: 10 # 最多重试 10 次（共等待约 50 秒）
+      start_period: 10s # 容器启动后等待 10 秒再开始健康检查
+    deploy:
+      resources:
+        limits:
+          memory: 512M # 限制最大内存 512MB
+        reservations:
+          memory: 256M # 预留内存 256MB
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Redis 7 - 缓存 & 分布式锁
+  # 启动顺序：第 2 个（依赖 postgres healthy）
+  # ===========================================================================
+  redis:
+    image: redis:7
+    container_name: interview-redis
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 200mb
+      --maxmemory-policy allkeys-lru
+    # 【面试考点】Redis 持久化配置
+    # --appendonly yes：开启 AOF 持久化
+    # --appendfsync everysec：每秒 fsync 一次（性能与安全的平衡）
+    # --maxmemory-policy allkeys-lru：内存满时淘汰最近最少使用的 key
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      # redis-cli ping 返回 PONG 表示 Redis 正常
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy # 等待 postgres 健康后再启动
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Kafka 3.7.0 (KRaft 模式) - 消息队列
+  # 启动顺序：第 3 个（依赖 redis healthy）
+  #
+  # 【面试考点】KRaft 模式核心配置
+  # KRaft = Kafka Raft，用 Raft 协议替代 ZooKeeper 管理集群元数据
+  # ===========================================================================
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: interview-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # -----------------------------------------------------------------------
+      # KRaft 模式必须配置项
+      # -----------------------------------------------------------------------
+
+      # 节点 ID，集群内唯一，单节点固定为 1
+      KAFKA_NODE_ID: 1
+
+      # 节点角色：同时作为 broker（处理消息）和 controller（管理元数据）
+      # 【面试追问】生产环境建议 broker 和 controller 分离，避免单点故障
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      # 集群 ID：base64 编码的 UUID，同一集群所有节点必须相同
+      # 生成方式：kafka-storage.sh random-uuid | base64
+      # 注意：一旦设置不能更改，否则需要清空数据目录重新初始化
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qg=="
+
+      # Controller 选举投票者：格式为 nodeId@host:port
+      # 单节点：只有自己参与投票
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+
+      # -----------------------------------------------------------------------
+      # 监听器配置
+      # -----------------------------------------------------------------------
+
+      # 监听地址：PLAINTEXT 用于客户端连接，CONTROLLER 用于集群内部通信
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+
+      # 对外广播地址：客户端通过此地址连接 Kafka
+      # 【面试考点】LISTENERS vs ADVERTISED_LISTENERS 的区别：
+      # LISTENERS：Kafka 实际监听的地址（0.0.0.0 表示所有网卡）
+      # ADVERTISED_LISTENERS：告诉客户端"来这个地址连我"
+      # 容器内用 kafka:9092，宿主机用 localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+
+      # 监听器安全协议映射
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+      # Controller 使用的监听器名称
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # -----------------------------------------------------------------------
+      # Topic 和复制配置（单节点开发环境）
+      # -----------------------------------------------------------------------
+
+      # 内部 topic（__consumer_offsets）的副本数
+      # 【面试考点】生产环境应设为 3（3 副本），开发环境设为 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      # 事务状态 topic 的副本数
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+      # 事务状态 topic 的最小 ISR（In-Sync Replicas）数
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # 自动创建 topic（开发环境方便，生产环境建议关闭）
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      # -----------------------------------------------------------------------
+      # 日志和性能配置
+      # -----------------------------------------------------------------------
+
+      # 日志保留时间（小时）
+      KAFKA_LOG_RETENTION_HOURS: 168 # 7 天
+
+      # 单个日志段文件大小（字节）：100MB
+      KAFKA_LOG_SEGMENT_BYTES: 104857600
+
+      # 日志目录
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # 默认分区数（面试考点：分区数影响并发消费能力）
+      KAFKA_NUM_PARTITIONS: 3
+
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      # 通过 kafka-topics 命令检查 Kafka 是否就绪
+      test:
+        [
+          "CMD",
+          "kafka-topics",
+          "--bootstrap-server",
+          "localhost:9092",
+          "--list",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s # Kafka 启动较慢，给予 30 秒预热时间
+    depends_on:
+      redis:
+        condition: service_healthy # 等待 redis 健康后再启动
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    restart: unless-stopped
+
+# =============================================================================
+# 数据卷定义
+# 【面试考点】named volume vs bind mount
+# named volume：由 Docker 管理，数据存储在 Docker 数据目录
+# bind mount：直接挂载宿主机目录，便于直接访问文件
+# 生产环境推荐 named volume，开发环境配置文件用 bind mount
+# =============================================================================
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  kafka-data:
+    driver: local

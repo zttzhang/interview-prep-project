@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL - 使用较轻量的 alpine 版本用于测试
@@ -13,6 +13,9 @@ services:
       - "5433:5432"
     volumes:
       - postgres-test-data:/var/lib/postgresql/data
+      # 容器首次启动时自动执行，创建表结构和测试数据
+      # 注意：只在数据卷为空（首次启动）时执行
+      - ./init-sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U interview"]
       interval: 5s
@@ -57,7 +60,14 @@ services:
     ports:
       - "9093:9092"
     healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      test:
+        [
+          "CMD",
+          "kafka-topics",
+          "--bootstrap-server",
+          "localhost:9092",
+          "--list",
+        ]
       interval: 10s
       timeout: 10s
       retries: 5

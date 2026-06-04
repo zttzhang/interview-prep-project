@@ -1,0 +1,131 @@
+# ============================================================
+# HPA 自动扩缩容配置
+# 【面试考点】K8s 弹性伸缩
+# ============================================================
+
+# 基础HPA：基于CPU使用率
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: interview-app-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: interview-app
+  minReplicas: 2 # 最小副本数（保证高可用）
+  maxReplicas: 10 # 最大副本数（控制成本）
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70 # CPU使用率超过70%触发扩容
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80 # 内存使用率超过80%触发扩容
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60 # 扩容稳定窗口60s（防止抖动）
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60 # 每60s最多扩容2个Pod
+    scaleDown:
+      stabilizationWindowSeconds: 300 # 缩容稳定窗口300s（防止频繁缩容）
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60 # 每60s最多缩容1个Pod
+
+---
+# 进阶HPA：基于自定义指标（需要 Prometheus Adapter）
+# 场景：根据消息队列积压量扩缩容
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: interview-app-hpa-custom
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: interview-app
+  minReplicas: 1
+  maxReplicas: 20
+  metrics:
+    # 自定义指标：Kafka消费者积压量
+    - type: External
+      external:
+        metric:
+          name: kafka_consumer_lag
+          selector:
+            matchLabels:
+              topic: order-topic
+        target:
+          type: AverageValue
+          averageValue: "100" # 每个Pod处理100条积压消息
+    # Pod级别自定义指标：每秒请求数
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "500" # 每个Pod每秒500个请求
+
+
+# ============================================================
+# 【面试要点总结】
+# ============================================================
+
+# HPA 工作原理（面试必答）：
+# 1. metrics-server 每15s采集一次 Pod 的 CPU/内存指标
+# 2. HPA 控制器每15s查询一次 metrics-server
+# 3. 根据公式计算期望副本数
+# 4. 调用 Deployment/StatefulSet 的 scale 接口调整副本数
+#
+# 扩缩容公式（面试必背）：
+#   期望副本数 = ceil(当前副本数 × 当前指标值 / 目标指标值)
+#
+# 示例：
+#   当前副本数=2，当前CPU=90%，目标CPU=70%
+#   期望副本数 = ceil(2 × 90 / 70) = ceil(2.57) = 3
+#   → 扩容到3个Pod
+
+# HPA vs VPA vs KEDA 对比：
+# ┌──────────┬──────────────────────────┬──────────────────────────────┐
+# │ 方案     │ 扩缩维度                 │ 适用场景                     │
+# ├──────────┼──────────────────────────┼──────────────────────────────┤
+# │ HPA      │ 水平扩缩（Pod数量）      │ 无状态服务，流量波动         │
+# │ VPA      │ 垂直扩缩（CPU/内存规格） │ 资源难以预估的服务           │
+# │ KEDA     │ 水平扩缩（事件驱动）     │ 消息队列、定时任务、事件驱动 │
+# └──────────┴──────────────────────────┴──────────────────────────────┘
+#
+# KEDA 优势：支持缩容到0（节省成本），支持100+种触发器（Kafka/RabbitMQ/Cron等）
+
+# stabilizationWindow 的作用（防止抖动）：
+# - 问题：指标波动导致频繁扩缩容（Pod不断创建销毁）
+# - 解决：在稳定窗口期内，取窗口内的最大/最小期望副本数
+#   - scaleUp.stabilizationWindowSeconds=60：60s内取最大期望副本数（保守扩容）
+#   - scaleDown.stabilizationWindowSeconds=300：300s内取最小期望副本数（保守缩容）
+# - 生产建议：扩容窗口短（快速响应），缩容窗口长（避免频繁缩容）
+
+# 【面试追问】：HPA 和 Deployment 的 replicas 冲突怎么办？
+# 答：HPA 会接管 Deployment 的 replicas 字段
+#   - 一旦创建 HPA，不要手动修改 Deployment 的 replicas
+#   - 手动修改会被 HPA 在下次同步时覆盖
+#   - 最佳实践：使用 HPA 后，Deployment 的 replicas 设为 minReplicas 的值
+#   - 或者在 Deployment 中不设置 replicas（使用默认值1），让 HPA 完全控制
+
+# 【面试追问】：HPA 需要什么前提条件？
+# 答：
+#   1. 必须安装 metrics-server（kubectl top pod 能正常工作）
+#   2. Pod 必须设置 resources.requests（HPA 基于 requests 计算使用率）
+#   3. 自定义指标需要安装 Prometheus Adapter 或 KEDA

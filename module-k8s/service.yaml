@@ -1,0 +1,131 @@
+# ============================================================
+# K8s Service 四种类型完整示例
+# 【面试考点】Service 类型选择
+# ============================================================
+
+# 类型1：ClusterIP（默认）
+# 用途：集群内部通信，外部无法访问
+# 场景：微服务之间的内部调用
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: interview-app-clusterip
+  namespace: default
+  labels:
+    app: interview-app
+    service-type: clusterip
+  annotations:
+    description: "ClusterIP: 集群内部访问，外部不可达"
+spec:
+  type: ClusterIP
+  selector:
+    app: interview-app
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+  # ClusterIP 会分配一个虚拟IP，只在集群内可访问
+  # kube-proxy 通过 iptables/ipvs 规则转发流量
+
+---
+# 类型2：NodePort
+# 用途：通过节点IP+端口从外部访问
+# 场景：开发测试环境，不推荐生产使用
+apiVersion: v1
+kind: Service
+metadata:
+  name: interview-app-nodeport
+  namespace: default
+  annotations:
+    description: "NodePort: 通过节点IP:NodePort访问，范围30000-32767"
+spec:
+  type: NodePort
+  selector:
+    app: interview-app
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+      nodePort: 30080 # 不指定则随机分配 30000-32767
+
+---
+# 类型3：LoadBalancer
+# 用途：云厂商提供外部负载均衡器
+# 场景：生产环境对外暴露服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: interview-app-loadbalancer
+  namespace: default
+  annotations:
+    description: "LoadBalancer: 云厂商自动创建外部LB，生产推荐"
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb" # AWS NLB示例
+spec:
+  type: LoadBalancer
+  selector:
+    app: interview-app
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: 8443
+
+---
+# 类型4：ExternalName
+# 用途：将Service映射到外部DNS名称
+# 场景：访问集群外部服务（数据库、第三方API）
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-database
+  namespace: default
+  annotations:
+    description: "ExternalName: 映射外部服务，无需修改应用代码"
+spec:
+  type: ExternalName
+  externalName: db.example.com # 外部数据库域名
+  # 访问 external-database:5432 会被解析为 db.example.com:5432
+
+# ============================================================
+# 【面试要点总结】
+# ============================================================
+
+# 四种类型选择场景对比表：
+# ┌─────────────────┬──────────────────────────┬──────────────────────────────┐
+# │ 类型            │ 访问范围                 │ 典型场景                     │
+# ├─────────────────┼──────────────────────────┼──────────────────────────────┤
+# │ ClusterIP       │ 仅集群内部               │ 微服务内部调用（最常用）      │
+# │ NodePort        │ 节点IP:端口（外部可达）  │ 开发测试、临时对外暴露        │
+# │ LoadBalancer    │ 云厂商外部LB IP          │ 生产环境对外暴露              │
+# │ ExternalName    │ 映射到外部DNS            │ 访问集群外部服务              │
+# └─────────────────┴──────────────────────────┴──────────────────────────────┘
+
+# Ingress vs LoadBalancer 的区别：
+# - LoadBalancer：每个Service独立一个外部IP，成本高，适合TCP/UDP
+# - Ingress：多个Service共享一个外部IP，通过路径/域名路由，适合HTTP/HTTPS
+# - 生产推荐：Ingress + ClusterIP 组合（节省IP成本，支持路径路由）
+#
+# 示例：
+#   用户请求 → Ingress(nginx) → /api/* → ClusterIP(api-service)
+#                             → /web/* → ClusterIP(web-service)
+
+# 【面试追问】：Service 如何实现负载均衡？
+# 答：kube-proxy 在每个节点上监听 Service 变化，维护 iptables/ipvs 规则：
+#   - iptables 模式：通过 DNAT 规则随机转发到后端 Pod（默认，性能一般）
+#   - ipvs 模式：使用内核级 LVS，支持更多算法（rr/lc/dh/sh），性能更好
+#   - 推荐生产使用 ipvs 模式：kube-proxy --proxy-mode=ipvs
+#
+# 流量路径：
+#   客户端 → ClusterIP:Port → iptables/ipvs DNAT → PodIP:TargetPort
+#
+# 【面试追问】：Service 和 Endpoint 的关系？
+# 答：Service 通过 selector 匹配 Pod，自动创建同名 Endpoints 对象
+#   Endpoints 存储所有匹配 Pod 的 IP:Port 列表
+#   kube-proxy 监听 Endpoints 变化，动态更新转发规则

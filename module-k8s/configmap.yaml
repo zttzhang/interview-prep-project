@@ -1,0 +1,163 @@
+# ============================================================
+# ConfigMap 配置管理示例
+# 【面试考点】K8s 配置与密钥管理
+# ============================================================
+
+# ConfigMap：存储非敏感配置
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: interview-app-config
+  namespace: default
+  labels:
+    app: interview-app
+data:
+  # 键值对形式
+  APP_ENV: "production"
+  LOG_LEVEL: "INFO"
+  SERVER_PORT: "8080"
+
+  # 文件形式（application.yml内容）
+  application.yml: |
+    spring:
+      application:
+        name: interview-app
+      datasource:
+        url: jdbc:postgresql://postgres:5432/interview_prep
+        username: interview
+      redis:
+        host: redis
+        port: 6379
+      kafka:
+        bootstrap-servers: kafka:9092
+
+    server:
+      port: 8080
+
+    logging:
+      level:
+        com.interview: INFO
+
+---
+# Secret：存储敏感配置（base64编码）
+apiVersion: v1
+kind: Secret
+metadata:
+  name: interview-app-secret
+  namespace: default
+  labels:
+    app: interview-app
+type: Opaque
+data:
+  # echo -n 'interview' | base64
+  DB_PASSWORD: aW50ZXJ2aWV3
+  # echo -n 'redis123' | base64
+  REDIS_PASSWORD: cmVkaXMxMjM=
+  # echo -n 'your-jwt-secret-key' | base64
+  JWT_SECRET: eW91ci1qd3Qtc2VjcmV0LWtleQ==
+
+---
+# 演示如何在Deployment中使用ConfigMap和Secret
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: interview-app-with-config
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: interview-app
+  template:
+    metadata:
+      labels:
+        app: interview-app
+    spec:
+      containers:
+        - name: interview-app
+          image: interview-app:latest
+          # 方式1：环境变量（单个key）
+          env:
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: interview-app-config
+                  key: APP_ENV
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: interview-app-secret
+                  key: DB_PASSWORD
+          # 方式2：批量注入所有ConfigMap键值
+          envFrom:
+            - configMapRef:
+                name: interview-app-config
+          # 方式3：挂载为文件
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config
+              readOnly: true
+      volumes:
+        - name: config-volume
+          configMap:
+            name: interview-app-config
+            items:
+              - key: application.yml
+                path: application.yml
+
+# ============================================================
+# 【面试要点总结】
+# ============================================================
+
+# ConfigMap vs Secret 的区别：
+# ┌──────────────┬──────────────────────────┬──────────────────────────────┐
+# │ 特性         │ ConfigMap                │ Secret                       │
+# ├──────────────┼──────────────────────────┼──────────────────────────────┤
+# │ 存储内容     │ 非敏感配置（明文）       │ 敏感数据（base64编码）       │
+# │ 编码方式     │ 明文存储                 │ base64编码（非加密！）       │
+# │ 内存存储     │ 存储在 etcd              │ 存储在 etcd（可加密）        │
+# │ 挂载方式     │ env/envFrom/volume       │ env/envFrom/volume           │
+# │ 大小限制     │ 1MB                      │ 1MB                          │
+# └──────────────┴──────────────────────────┴──────────────────────────────┘
+#
+# 注意：base64 不是加密，只是编码！kubectl get secret -o yaml 可以直接看到
+
+# Secret 的类型（面试常考）：
+# - Opaque：通用类型，存储任意键值对（最常用）
+# - kubernetes.io/tls：存储 TLS 证书（tls.crt + tls.key）
+# - kubernetes.io/dockerconfigjson：存储 Docker 镜像仓库认证信息
+# - kubernetes.io/service-account-token：ServiceAccount Token（自动创建）
+# - kubernetes.io/basic-auth：基本认证（username + password）
+# - kubernetes.io/ssh-auth：SSH 认证（ssh-privatekey）
+
+# 三种使用方式对比：
+# ┌──────────────┬──────────────────────────┬──────────────────────────────┐
+# │ 方式         │ 优点                     │ 缺点                         │
+# ├──────────────┼──────────────────────────┼──────────────────────────────┤
+# │ env（单个）  │ 精确控制，命名灵活       │ 需逐个配置，繁琐             │
+# │ envFrom（批量）│ 简洁，一次注入全部     │ 键名不可自定义               │
+# │ volumeMount  │ 支持热更新，适合文件配置 │ 需要应用支持文件读取         │
+# └──────────────┴──────────────────────────┴──────────────────────────────┘
+
+# ConfigMap 热更新机制（面试重点）：
+# - 挂载为文件（volumeMount）：kubelet 定期同步（默认60s），自动更新文件内容
+#   → 应用需要监听文件变化（如 Spring Cloud Config 的 @RefreshScope）
+# - 环境变量（env/envFrom）：不会自动更新！需要重启 Pod 才能生效
+# - 热更新延迟：kubelet syncFrequency（默认1min）+ configmap propagation delay
+#
+# 强制触发热更新的方法：
+#   kubectl rollout restart deployment/interview-app
+
+# 【面试追问】：Secret 安全吗？
+# 答：默认情况下 Secret 并不安全：
+#   1. base64 只是编码，不是加密，任何人都能解码
+#   2. etcd 中默认明文存储（需要开启 EncryptionConfiguration）
+#   3. 有权限的用户可以通过 kubectl get secret 查看
+#
+# 生产环境安全方案：
+#   1. 开启 etcd 加密：EncryptionConfiguration（AES-CBC/AES-GCM）
+#   2. 使用 HashiCorp Vault：动态生成密钥，自动轮换
+#   3. 使用云厂商 KMS：AWS Secrets Manager / Azure Key Vault / GCP Secret Manager
+#   4. 使用 External Secrets Operator：将外部密钥同步到 K8s Secret
+#   5. 最小权限原则：通过 RBAC 限制 Secret 的访问权限

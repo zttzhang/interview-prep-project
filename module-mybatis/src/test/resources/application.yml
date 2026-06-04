@@ -1,0 +1,22 @@
+# 测试环境配置 - 覆盖 main/resources/application.yml
+# 对应 docker-compose-test.yml 启动的容器端口
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/interview_prep_test
+    username: interview
+    password: interview123
+
+  # 测试环境关闭 Redis/Kafka 自动连接（避免测试时报连接错误）
+  data:
+    redis:
+      host: localhost
+      port: 6380 # docker-compose-test.yml 中 Redis 映射端口
+
+  kafka:
+    bootstrap-servers: localhost:9092
+
+# 测试时打印完整 SQL，方便观察 MyBatis 生成的语句
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

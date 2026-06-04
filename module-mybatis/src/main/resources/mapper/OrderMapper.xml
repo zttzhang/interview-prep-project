@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+    【面试考点】MyBatis XML 映射文件
+    namespace 必须与 Mapper 接口的全限定类名完全一致
+-->
+<mapper namespace="com.interview.mybatis.mapper.OrderMapper">
+
+    <!--
+        【面试考点】resultMap - 解决列名与字段名不一致问题
+        
+        多表查询时，SELECT 出来的列名可能与 DTO 字段名不同，
+        必须用 resultMap 显式声明映射关系。
+        
+        对比：单表查询时 MyBatis-Plus 的 @TableField 可以自动处理，
+              但多表 JOIN 的结果没有实体类对应，必须手动 resultMap。
+    -->
+    <resultMap id="UserOrderResultMap" type="com.interview.mybatis.dto.UserOrderDTO">
+        <!-- id 标签：主键列，有性能优化作用（MyBatis 内部用于去重） -->
+        <id     column="user_id"          property="userId"/>
+        <!-- result 标签：普通列映射 -->
+        <result column="username"         property="username"/>
+        <result column="email"            property="email"/>
+        <result column="order_id"         property="orderId"/>
+        <result column="order_no"         property="orderNo"/>
+        <result column="product_name"     property="productName"/>
+        <result column="product_count"    property="productCount"/>
+        <result column="total_amount"     property="totalAmount"/>
+        <result column="order_status"     property="orderStatus"/>
+        <result column="order_create_time" property="orderCreateTime"/>
+    </resultMap>
+
+    <!-- 聚合统计查询专用 resultMap -->
+    <resultMap id="UserStatResultMap" type="com.interview.mybatis.dto.UserOrderDTO">
+        <id     column="user_id"      property="userId"/>
+        <result column="username"     property="username"/>
+        <result column="email"        property="email"/>
+        <result column="total_orders" property="totalOrders"/>
+        <result column="total_spent"  property="totalSpent"/>
+    </resultMap>
+
+    <!--
+        【面试考点 1】多表 JOIN + 动态 WHERE 条件
+        
+        对应接口方法：findUserOrdersByCondition(username, orderStatus)
+        
+        知识点：
+        1. LEFT JOIN：保留左表（users）所有行，即使没有订单也会出现
+        2. <where> 标签：自动处理 AND/OR 前缀，避免 "WHERE AND" 语法错误
+        3. <if> 标签：动态拼接条件，test 里写 Java 表达式
+        4. CONCAT('%', #{username}, '%')：LIKE 模糊查询的安全写法（用 #{} 防注入）
+        5. 列别名（AS）：解决多表同名列冲突，如两个表都有 id、create_time
+    -->
+    <select id="findUserOrdersByCondition" resultMap="UserOrderResultMap">
+        SELECT
+            u.id           AS user_id,
+            u.username     AS username,
+            u.email        AS email,
+            o.id           AS order_id,
+            o.order_no     AS order_no,
+            o.product_name AS product_name,
+            o.product_count AS product_count,
+            o.total_amount AS total_amount,
+            o.status       AS order_status,
+            o.create_time  AS order_create_time
+        FROM users u
+        LEFT JOIN orders o ON u.id = o.user_id
+        <!--
+            <where> 会自动：
+            1. 如果内部有内容，加上 WHERE 关键字
+            2. 去掉第一个条件多余的 AND/OR
+            所以每个 <if> 都可以放心写 AND 开头
+        -->
+        <where>
+            <if test="username != null and username != ''">
+                AND u.username LIKE CONCAT('%', #{username}, '%')
+            </if>
+            <if test="orderStatus != null">
+                AND o.status = #{orderStatus}
+            </if>
+        </where>
+        ORDER BY o.create_time DESC
+    </select>
+
+    <!--
+        【面试考点 2】聚合统计：GROUP BY + HAVING
+        
+        对应接口方法：findHighValueUsers(minTotalSpent)
+        
+        知识点：
+        1. GROUP BY：按用户分组，每个用户一行结果
+        2. COUNT(o.id)：统计订单数（用 o.id 而非 *，避免 NULL 行被计入）
+        3. SUM(o.total_amount)：求和，COALESCE 处理没有订单时的 NULL
+        4. HAVING：对聚合结果过滤（WHERE 在分组前过滤，HAVING 在分组后过滤）
+        5. INNER JOIN：只返回有订单的用户（与 LEFT JOIN 的区别）
+    -->
+    <select id="findHighValueUsers" resultMap="UserStatResultMap">
+        SELECT
+            u.id                            AS user_id,
+            u.username                      AS username,
+            u.email                         AS email,
+            COUNT(o.id)                     AS total_orders,
+            COALESCE(SUM(o.total_amount), 0) AS total_spent
+        FROM users u
+        INNER JOIN orders o ON u.id = o.user_id
+        WHERE o.status = 1  -- 只统计已支付订单
+        GROUP BY u.id, u.username, u.email
+        HAVING SUM(o.total_amount) >= #{minTotalSpent}
+        ORDER BY total_spent DESC
+    </select>
+
+    <!--
+        【面试考点 3】<foreach> 生成 IN 子句
+        
+        对应接口方法：findLatestOrdersByUserIds(userIds)
+        
+        知识点：
+        1. <foreach>：遍历集合，生成 IN (1, 2, 3) 这样的子句
+           - collection：参数名（与 @Param 一致）
+           - item：每次迭代的变量名
+           - separator：元素间分隔符
+           - open/close：整体的开闭符号
+        2. 子查询 + ROW_NUMBER()：每个用户只取最新一条订单
+           （PostgreSQL 窗口函数，面试高频考点）
+        3. 外层 WHERE rn = 1：过滤出每组第一行
+    -->
+    <select id="findLatestOrdersByUserIds" resultMap="UserOrderResultMap">
+        SELECT
+            u.id            AS user_id,
+            u.username      AS username,
+            u.email         AS email,
+            latest.id       AS order_id,
+            latest.order_no AS order_no,
+            latest.product_name  AS product_name,
+            latest.product_count AS product_count,
+            latest.total_amount  AS total_amount,
+            latest.status        AS order_status,
+            latest.create_time   AS order_create_time
+        FROM users u
+        INNER JOIN (
+            -- 窗口函数：按 user_id 分组，按 create_time 倒序排名
+            -- rn=1 即每个用户最新的那条订单
+            SELECT
+                o.*,
+                ROW_NUMBER() OVER (
+                    PARTITION BY o.user_id
+                    ORDER BY o.create_time DESC
+                ) AS rn
+            FROM orders o
+            WHERE o.user_id IN
+            <!--
+                <foreach> 生成：IN (1, 2, 3, ...)
+                open/close 加括号，separator 加逗号
+            -->
+            <foreach collection="userIds" item="uid"
+                     open="(" separator="," close=")">
+                #{uid}
+            </foreach>
+        ) latest ON u.id = latest.user_id
+        WHERE latest.rn = 1
+        ORDER BY u.id
+    </select>
+
+</mapper>

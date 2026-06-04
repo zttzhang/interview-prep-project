@@ -1,6 +1,7 @@
 -- =====================================================
 -- 面试教学工程 - 数据库初始化脚本
 -- 用于创建测试所需的表结构和测试数据
+-- 数据库：PostgreSQL 15
 -- =====================================================
 
 -- 1. 用户表
@@ -10,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(100) NOT NULL,
     phone VARCHAR(20),
     password_hash VARCHAR(255) NOT NULL,
-    status INTEGER DEFAULT 1 COMMENT '1-正常 0-禁用',
+    status INTEGER DEFAULT 1,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -23,7 +24,7 @@ CREATE TABLE IF NOT EXISTS orders (
     product_name VARCHAR(200) NOT NULL,
     product_count INTEGER NOT NULL DEFAULT 1,
     total_amount DECIMAL(12, 2) NOT NULL,
-    status INTEGER DEFAULT 0 COMMENT '0-待支付 1-已支付 2-已取消 3-已退款',
+    status INTEGER DEFAULT 0,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -46,7 +47,7 @@ CREATE TABLE IF NOT EXISTS seckill_orders (
     order_no VARCHAR(64) NOT NULL UNIQUE,
     user_id BIGINT NOT NULL,
     product_id BIGINT NOT NULL,
-    status INTEGER DEFAULT 0 COMMENT '0-创建 1-成功 2-失败',
+    status INTEGER DEFAULT 0,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -55,7 +56,7 @@ CREATE TABLE IF NOT EXISTS message_consume_records (
     id BIGSERIAL PRIMARY KEY,
     msg_id VARCHAR(64) NOT NULL UNIQUE,
     msg_content TEXT,
-    status INTEGER DEFAULT 0 COMMENT '0-待处理 1-已处理 2-处理失败',
+    status INTEGER DEFAULT 0,
     retry_count INTEGER DEFAULT 0,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -68,7 +69,7 @@ CREATE TABLE IF NOT EXISTS delay_queue_tasks (
     task_type VARCHAR(50) NOT NULL,
     payload TEXT,
     execute_time TIMESTAMP NOT NULL,
-    status INTEGER DEFAULT 0 COMMENT '0-待执行 1-执行中 2-已完成 3-已失败',
+    status INTEGER DEFAULT 0,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -113,7 +114,7 @@ CREATE INDEX IF NOT EXISTS idx_message_consume_records_msg_id ON message_consume
 CREATE INDEX IF NOT EXISTS idx_delay_queue_tasks_execute_time ON delay_queue_tasks(execute_time);
 
 -- =====================================================
--- 注释说明
+-- 表和列注释（PostgreSQL 标准语法）
 -- =====================================================
 COMMENT ON TABLE users IS '用户表';
 COMMENT ON TABLE orders IS '订单表';
