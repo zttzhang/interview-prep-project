@@ -1,9 +1,9 @@
 # 测试环境配置 - 覆盖 main/resources/application.yml
-# 对应 docker-compose-test.yml 启动的容器端口
+# 对应 docker-compose.yml 启动的容器端口（统一使用 docker-compose.yml，已删除 docker-compose-test.yml）
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5433/interview_prep_test
+    url: jdbc:postgresql://localhost:5432/interview_prep
     username: interview
     password: interview123
 
@@ -11,7 +11,7 @@ spring:
   data:
     redis:
       host: localhost
-      port: 6380 # docker-compose-test.yml 中 Redis 映射端口
+      port: 6379 # docker-compose.yml 中 Redis 映射端口
 
   kafka:
     bootstrap-servers: localhost:9092

@@ -68,7 +68,7 @@ public interface UserMapper extends BaseMapper<User> {
      */
     @Select("<script>" +
             "SELECT * FROM users " +
-            "<bind name='pattern' value=\"'%' + #{name} + '%'\"/> " +
+            "<bind name='pattern' value=\"'%' + name + '%'\"/> " +
             "WHERE username LIKE #{pattern} " +
             "</script>")
     List<User> findByUsernameLikeBind(@Param("name") String name);

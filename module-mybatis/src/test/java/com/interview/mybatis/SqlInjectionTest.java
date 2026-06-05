@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -120,15 +122,20 @@ class SqlInjectionTest {
             users.forEach(u -> log.info("  {}", u.getUsername()));
         }
         
-        // 测试非法列名（模拟攻击）
-        try {
-            log.info("尝试非法列名 '1; DROP TABLE users;--':");
-            userMapper.findAllOrderByColumn("1; DROP TABLE users;--");
-        } catch (Exception e) {
-            log.error("异常: {}", e.getMessage());
+        // 【面试考点】白名单校验 - 防止 ORDER BY 注入
+        // ⚠️ 注意：绝对不能把非法列名直接传给 ${}，PostgreSQL 支持多语句，会真的执行 DROP TABLE！
+        // 正确做法：在 Java 层做白名单校验，非法列名直接拒绝，不发送到数据库
+        String illegalColumn = "1; DROP TABLE users;--";
+        List<String> whitelist = java.util.List.of("id", "username", "create_time");
+        
+        if (!whitelist.contains(illegalColumn)) {
+            log.warn("【拦截】非法列名 '{}' 不在白名单中，已拒绝！", illegalColumn);
+            log.warn("【结论】${{}} 注入风险：若不做白名单校验，攻击者可执行任意 SQL（包括 DROP TABLE）");
+        } else {
+            userMapper.findAllOrderByColumn(illegalColumn);
         }
         
-        log.info("【结论】ORDER BY 等动态列名场景必须用 ${}，但要做白名单校验");
+        log.info("【结论】ORDER BY 等动态列名场景必须用 ${}，但要在 Java 层做白名单校验，绝不能直接传入用户输入");
     }
 
     /**

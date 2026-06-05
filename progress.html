@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>面试备考进度</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: #f0f2f5;
+        color: #333;
+      }
+
+      header {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: white;
+        padding: 28px 32px;
+      }
+      header h1 {
+        font-size: 22px;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      header p {
+        font-size: 13px;
+        color: #8899aa;
+      }
+
+      .summary {
+        display: flex;
+        gap: 16px;
+        padding: 20px 32px;
+        flex-wrap: wrap;
+      }
+      .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 16px 24px;
+        flex: 1;
+        min-width: 140px;
+        text-align: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      }
+      .stat-card .num {
+        font-size: 32px;
+        font-weight: 700;
+      }
+      .stat-card .lbl {
+        font-size: 12px;
+        color: #888;
+        margin-top: 4px;
+      }
+      .num.done {
+        color: #52c41a;
+      }
+      .num.wip {
+        color: #1890ff;
+      }
+      .num.todo {
+        color: #bbb;
+      }
+      .num.total {
+        color: #333;
+      }
+
+      .global-bar {
+        margin: 0 32px 20px;
+        background: #e8e8e8;
+        border-radius: 20px;
+        height: 10px;
+        overflow: hidden;
+      }
+      .global-bar-fill {
+        height: 100%;
+        border-radius: 20px;
+        background: linear-gradient(90deg, #52c41a, #73d13d);
+        transition: width 0.6s;
+      }
+
+      .main {
+        padding: 0 32px 40px;
+      }
+
+      .module-block {
+        background: white;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        overflow: hidden;
+      }
+      .module-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        cursor: pointer;
+        user-select: none;
+        border-bottom: 1px solid #f0f0f0;
+      }
+      .module-header:hover {
+        background: #fafafa;
+      }
+      .module-title {
+        font-size: 15px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .module-title .icon {
+        font-size: 18px;
+      }
+      .module-meta {
+        font-size: 12px;
+        color: #888;
+      }
+
+      .module-progress {
+        height: 4px;
+        background: #f0f0f0;
+      }
+      .module-progress-fill {
+        height: 100%;
+        transition: width 0.4s;
+      }
+
+      .item-list {
+        padding: 0 20px 12px;
+      }
+      .item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid #f7f7f7;
+      }
+      .item:last-child {
+        border-bottom: none;
+      }
+
+      .checkbox {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 2px solid #d9d9d9;
+        flex-shrink: 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        margin-top: 1px;
+      }
+      .checkbox.checked {
+        background: #52c41a;
+        border-color: #52c41a;
+        color: white;
+        font-size: 12px;
+      }
+      .checkbox.in-progress {
+        background: #1890ff;
+        border-color: #1890ff;
+        color: white;
+        font-size: 11px;
+      }
+
+      .item-info {
+        flex: 1;
+      }
+      .item-name {
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .item-name.done-text {
+        text-decoration: line-through;
+        color: #aaa;
+      }
+      .item-desc {
+        font-size: 12px;
+        color: #888;
+        margin-top: 3px;
+        line-height: 1.5;
+      }
+      .item-tags {
+        margin-top: 5px;
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+      .tag {
+        font-size: 11px;
+        padding: 1px 8px;
+        border-radius: 10px;
+        background: #f0f0f0;
+        color: #666;
+      }
+      .tag.red {
+        background: #fff1f0;
+        color: #cf1322;
+      }
+      .tag.blue {
+        background: #e6f7ff;
+        color: #0958d9;
+      }
+      .tag.green {
+        background: #f6ffed;
+        color: #389e0d;
+      }
+      .tag.orange {
+        background: #fff7e6;
+        color: #d46b08;
+      }
+      .tag.purple {
+        background: #f9f0ff;
+        color: #531dab;
+      }
+
+      .item-status {
+        font-size: 11px;
+        padding: 2px 10px;
+        border-radius: 10px;
+        flex-shrink: 0;
+        margin-top: 2px;
+        white-space: nowrap;
+      }
+      .status-done {
+        background: #f6ffed;
+        color: #52c41a;
+        border: 1px solid #b7eb8f;
+      }
+      .status-in-progress {
+        background: #e6f7ff;
+        color: #1890ff;
+        border: 1px solid #91d5ff;
+      }
+      .status-todo {
+        background: #fafafa;
+        color: #bbb;
+        border: 1px solid #e8e8e8;
+      }
+
+      .note-box {
+        margin: 4px 0 6px 32px;
+        padding: 8px 12px;
+        background: #fffbe6;
+        border-left: 3px solid #faad14;
+        border-radius: 0 6px 6px 0;
+        font-size: 12px;
+        color: #7c5c00;
+      }
+
+      footer {
+        text-align: center;
+        padding: 20px;
+        font-size: 12px;
+        color: #bbb;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>🎯 面试备考学习进度</h1>
+      <p>Spring Boot · MyBatis · Redis · Kafka · 微服务 · K8s</p>
+    </header>
+
+    <!-- 统计卡片 -->
+    <div class="summary">
+      <div class="stat-card">
+        <div class="num done" id="cnt-done">0</div>
+        <div class="lbl">已完成</div>
+      </div>
+      <div class="stat-card">
+        <div class="num wip" id="cnt-wip">0</div>
+        <div class="lbl">进行中</div>
+      </div>
+      <div class="stat-card">
+        <div class="num todo" id="cnt-todo">0</div>
+        <div class="lbl">待学习</div>
+      </div>
+      <div class="stat-card">
+        <div class="num total" id="cnt-total">0</div>
+        <div class="lbl">总计</div>
+      </div>
+      <div class="stat-card" style="flex: 2; min-width: 200px">
+        <div style="font-size: 13px; color: #888; margin-bottom: 8px">
+          整体完成度
+        </div>
+        <div class="global-bar" style="margin: 0">
+          <div class="global-bar-fill" id="global-fill" style="width: 0%"></div>
+        </div>
+        <div
+          style="
+            font-size: 20px;
+            font-weight: 700;
+            color: #52c41a;
+            margin-top: 8px;
+          "
+          id="global-pct"
+        >
+          0%
+        </div>
+      </div>
+    </div>
+
+    <div class="main">
+      <!-- ====== MODULE: MyBatis ====== -->
+      <div class="module-block">
+        <div class="module-header" onclick="toggleModule(this)">
+          <div class="module-title">
+            <span class="icon">🗄️</span> module-mybatis — 测试类
+          </div>
+          <div class="module-meta" id="meta-mybatis-test">0 / 5</div>
+        </div>
+        <div class="module-progress">
+          <div
+            class="module-progress-fill"
+            id="prog-mybatis-test"
+            style="width: 0%; background: #52c41a"
+          ></div>
+        </div>
+        <div class="item-list" id="list-mybatis-test">
+          <div class="item" data-id="sql-injection">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">SqlInjectionTest.java</div>
+              <div class="item-desc">
+                #{} vs ${} 区别演示：预编译防注入、字符串替换危险、LIKE
+                查询、ORDER BY 白名单
+              </div>
+              <div class="item-tags">
+                <span class="tag red">#{} 防注入</span>
+                <span class="tag orange">${} 注入风险</span>
+                <span class="tag blue">LIKE / bind</span>
+                <span class="tag purple">ORDER BY 白名单</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="order-xml">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">OrderMapperXmlTest.java</div>
+              <div class="item-desc">
+                XML 多表查询：LEFT JOIN + 动态 WHERE、GROUP BY + HAVING
+                聚合、&lt;foreach&gt; + ROW_NUMBER 窗口函数
+              </div>
+              <div class="item-tags">
+                <span class="tag blue">LEFT JOIN</span>
+                <span class="tag blue">&lt;if&gt; 动态条件</span>
+                <span class="tag orange">GROUP BY / HAVING</span>
+                <span class="tag purple">ROW_NUMBER 窗口函数</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+          <div class="note-box">
+            ⚠️ 注意：注释里有 docker-compose-test.yml 启动命令，实际用
+            docker-compose.yml（podman-compose up -d）
+          </div>
+
+          <div class="item" data-id="dynamic-sql">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">DynamicSqlTest.java</div>
+              <div class="item-desc">
+                动态 SQL：&lt;if&gt;+&lt;where&gt; 动态条件、&lt;foreach&gt; IN
+                查询、&lt;set&gt;+&lt;if&gt;
+                动态更新、&lt;choose&gt;/&lt;when&gt; switch 选择
+              </div>
+              <div class="item-tags">
+                <span class="tag blue">&lt;where&gt;</span>
+                <span class="tag blue">&lt;foreach&gt;</span>
+                <span class="tag green">&lt;set&gt;</span>
+                <span class="tag orange">&lt;choose&gt;</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="cache">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">CacheTest.java</div>
+              <div class="item-desc">
+                一级缓存（L1）命中/失效、二级缓存（L2）跨 SqlSession
+                命中/失效、手动管理 SqlSession 生命周期
+              </div>
+              <div class="item-tags">
+                <span class="tag blue">L1 一级缓存</span>
+                <span class="tag purple">L2 二级缓存</span>
+                <span class="tag orange">SqlSession 生命周期</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="batch-insert">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">BatchInsertPerfTest.java</div>
+              <div class="item-desc">
+                批量插入性能对比：单条 for 循环 vs XML foreach vs BATCH
+                执行器，各插入 10000 条计时对比
+              </div>
+              <div class="item-tags">
+                <span class="tag red">单条插入（错误示范）</span>
+                <span class="tag green">foreach 批量</span>
+                <span class="tag green">BATCH 执行器</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== MODULE: MD 文档 ====== -->
+      <div class="module-block">
+        <div class="module-header" onclick="toggleModule(this)">
+          <div class="module-title">
+            <span class="icon">📄</span> 学习文档（Markdown）
+          </div>
+          <div class="module-meta" id="meta-docs">0 / 7</div>
+        </div>
+        <div class="module-progress">
+          <div
+            class="module-progress-fill"
+            id="prog-docs"
+            style="width: 0%; background: #1890ff"
+          ></div>
+        </div>
+        <div class="item-list" id="list-docs">
+          <div class="item" data-id="learning-guide">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">LEARNING_GUIDE.md</div>
+              <div class="item-desc">
+                整体学习路线、各模块学习顺序、重点考点索引
+              </div>
+              <div class="item-tags">
+                <span class="tag blue">学习路线</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待阅读</div>
+          </div>
+
+          <div class="item" data-id="interview-questions">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">interview-questions.md</div>
+              <div class="item-desc">
+                高频面试题汇总与答案，覆盖所有模块考点
+              </div>
+              <div class="item-tags">
+                <span class="tag red">高频面试题</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待阅读</div>
+          </div>
+
+          <div class="item" data-id="cheatsheet">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">cheatsheet.md</div>
+              <div class="item-desc">
+                速查卡：关键知识点一页纸汇总，面试前快速复习
+              </div>
+              <div class="item-tags"><span class="tag green">速查卡</span></div>
+            </div>
+            <div class="item-status status-todo">待阅读</div>
+          </div>
+
+          <div class="item" data-id="memo">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">memo.md</div>
+              <div class="item-desc">个人笔记备忘录，随时记录学习心得</div>
+              <div class="item-tags">
+                <span class="tag orange">个人笔记</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待阅读</div>
+          </div>
+
+          <div class="item" data-id="k8s-notes">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">module-k8s/INTERVIEW_NOTES.md</div>
+              <div class="item-desc">
+                K8s 面试考点：Pod、Deployment、Service、HPA、探针、ConfigMap
+              </div>
+              <div class="item-tags">
+                <span class="tag purple">K8s</span
+                ><span class="tag blue">HPA 自动扩缩</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待阅读</div>
+          </div>
+
+          <div class="item" data-id="env-setup">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">ENV_SETUP.md</div>
+              <div class="item-desc">
+                本地环境搭建指南，podman/docker 容器启动说明
+              </div>
+              <div class="item-tags">
+                <span class="tag green">环境配置</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待阅读</div>
+          </div>
+
+          <div class="item" data-id="br">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">br.md</div>
+              <div class="item-desc">Bug Report / 问题记录</div>
+              <div class="item-tags">
+                <span class="tag orange">问题记录</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待阅读</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== MODULE: Redis ====== -->
+      <div class="module-block">
+        <div class="module-header" onclick="toggleModule(this)">
+          <div class="module-title">
+            <span class="icon">🔴</span> module-redis — 测试类
+          </div>
+          <div class="module-meta" id="meta-redis">0 / 4</div>
+        </div>
+        <div class="module-progress">
+          <div
+            class="module-progress-fill"
+            id="prog-redis"
+            style="width: 0%; background: #ff4d4f"
+          ></div>
+        </div>
+        <div class="item-list" id="list-redis">
+          <div class="item" data-id="redis-datatype">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">DataTypeTest.java</div>
+              <div class="item-desc">
+                Redis 五种数据类型：String、Hash、List、Set、ZSet
+                核心操作与应用场景
+              </div>
+              <div class="item-tags">
+                <span class="tag blue">String</span>
+                <span class="tag blue">Hash</span>
+                <span class="tag green">List / Set</span>
+                <span class="tag purple">ZSet 排行榜</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="redis-lock">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">DistributedLockTest.java</div>
+              <div class="item-desc">
+                分布式锁：Redisson 可重入锁、看门狗续期、SETNX
+                手动实现、锁超时与释放安全
+              </div>
+              <div class="item-tags">
+                <span class="tag red">Redisson 分布式锁</span>
+                <span class="tag orange">看门狗续期</span>
+                <span class="tag blue">SETNX</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="redis-cache-problem">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">CacheProblemTest.java</div>
+              <div class="item-desc">
+                三大缓存问题：穿透（空值缓存/布隆过滤器）、雪崩（随机TTL）、击穿（互斥锁）
+              </div>
+              <div class="item-tags">
+                <span class="tag red">缓存穿透</span>
+                <span class="tag orange">缓存雪崩</span>
+                <span class="tag purple">缓存击穿</span>
+                <span class="tag blue">布隆过滤器</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="redis-performance">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">PerformanceTest.java</div>
+              <div class="item-desc">
+                Redis 性能测试：Pipeline 批量操作 vs
+                单条操作性能对比、序列化方式对比
+              </div>
+              <div class="item-tags">
+                <span class="tag green">Pipeline 批量</span>
+                <span class="tag orange">性能对比</span>
+                <span class="tag blue">序列化</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== MODULE: Kafka ====== -->
+      <div class="module-block">
+        <div class="module-header" onclick="toggleModule(this)">
+          <div class="module-title">
+            <span class="icon">📨</span> module-kafka — 测试类
+          </div>
+          <div class="module-meta" id="meta-kafka">0 / 3</div>
+        </div>
+        <div class="module-progress">
+          <div
+            class="module-progress-fill"
+            id="prog-kafka"
+            style="width: 0%; background: #faad14"
+          ></div>
+        </div>
+        <div class="item-list" id="list-kafka">
+          <div class="item" data-id="kafka-producer">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">ProducerReliabilityTest.java</div>
+              <div class="item-desc">
+                生产者可靠性：acks
+                配置、重试机制、幂等生产者（enable.idempotence）、事务消息
+              </div>
+              <div class="item-tags">
+                <span class="tag red">acks=all</span>
+                <span class="tag orange">幂等生产者</span>
+                <span class="tag blue">事务消息</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="kafka-consumer">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">ConsumerIdempotentTest.java</div>
+              <div class="item-desc">
+                消费者幂等：重复消费问题、业务唯一键去重、手动提交
+                offset、消费者组
+              </div>
+              <div class="item-tags">
+                <span class="tag red">重复消费</span>
+                <span class="tag orange">幂等消费</span>
+                <span class="tag purple">手动提交 offset</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="kafka-deadletter">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">DeadLetterTest.java</div>
+              <div class="item-desc">
+                死信队列：消费失败重试、超过重试次数转入死信、异常消息落库与人工补偿
+              </div>
+              <div class="item-tags">
+                <span class="tag red">死信队列</span>
+                <span class="tag orange">失败重试</span>
+                <span class="tag blue">人工补偿</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== MODULE: Microservice ====== -->
+      <div class="module-block">
+        <div class="module-header" onclick="toggleModule(this)">
+          <div class="module-title">
+            <span class="icon">⚙️</span> module-microservice — 核心类
+          </div>
+          <div class="module-meta" id="meta-micro">0 / 3</div>
+        </div>
+        <div class="module-progress">
+          <div
+            class="module-progress-fill"
+            id="prog-micro"
+            style="width: 0%; background: #722ed1"
+          ></div>
+        </div>
+        <div class="item-list" id="list-micro">
+          <div class="item" data-id="micro-circuit">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">
+                SentinelDemo.java + FallbackHandler.java
+              </div>
+              <div class="item-desc">
+                熔断降级：Sentinel
+                规则配置、@SentinelResource、降级处理、熔断恢复
+              </div>
+              <div class="item-tags">
+                <span class="tag red">熔断降级</span>
+                <span class="tag orange">Sentinel</span>
+                <span class="tag blue">降级兜底</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="micro-idempotent">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">
+                IdempotentAspect.java + IdempotentToken.java
+              </div>
+              <div class="item-desc">
+                接口幂等性：Token 令牌机制、AOP 拦截、Redis 原子操作防重复提交
+              </div>
+              <div class="item-tags">
+                <span class="tag blue">幂等 Token</span>
+                <span class="tag purple">AOP 拦截</span>
+                <span class="tag orange">Redis 原子操作</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+
+          <div class="item" data-id="micro-transaction">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">
+                SagaDemo.java + TccDemo.java + LocalMessageTable.java
+              </div>
+              <div class="item-desc">
+                分布式事务：Saga 补偿模式、TCC（Try-Confirm-Cancel）、本地消息表
+                + Kafka 最终一致
+              </div>
+              <div class="item-tags">
+                <span class="tag red">Saga 补偿</span>
+                <span class="tag orange">TCC</span>
+                <span class="tag purple">本地消息表</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== MODULE: Integration ====== -->
+      <div class="module-block">
+        <div class="module-header" onclick="toggleModule(this)">
+          <div class="module-title">
+            <span class="icon">🔗</span> module-integration — 综合场景
+          </div>
+          <div class="module-meta" id="meta-integration">0 / 1</div>
+        </div>
+        <div class="module-progress">
+          <div
+            class="module-progress-fill"
+            id="prog-integration"
+            style="width: 0%; background: #13c2c2"
+          ></div>
+        </div>
+        <div class="item-list" id="list-integration">
+          <div class="item" data-id="integration-test">
+            <div class="checkbox" onclick="toggleItem(this)"></div>
+            <div class="item-info">
+              <div class="item-name">module-integration 综合场景</div>
+              <div class="item-desc">
+                秒杀系统、接口幂等性、延迟队列（Redis ZSet + Kafka）综合应用
+              </div>
+              <div class="item-tags">
+                <span class="tag red">秒杀系统</span>
+                <span class="tag orange">接口幂等</span>
+                <span class="tag purple">延迟队列</span>
+              </div>
+            </div>
+            <div class="item-status status-todo">待学习</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>点击圆圈切换状态 · 数据保存在本地 localStorage</footer>
+
+    <script>
+      // ── 持久化 ──────────────────────────────────────────────
+      const STORE_KEY = "interview_progress_v2";
+
+      function loadState() {
+        try {
+          return JSON.parse(localStorage.getItem(STORE_KEY)) || {};
+        } catch {
+          return {};
+        }
+      }
+      function saveState(state) {
+        localStorage.setItem(STORE_KEY, JSON.stringify(state));
+      }
+
+      // ── 状态循环：todo → in-progress → done → todo ─────────
+      const STATES = ["todo", "in-progress", "done"];
+
+      function getNextState(cur) {
+        const idx = STATES.indexOf(cur);
+        return STATES[(idx + 1) % STATES.length];
+      }
+
+      function applyCheckbox(cb, state) {
+        cb.className = "checkbox";
+        if (state === "done") {
+          cb.classList.add("checked");
+          cb.textContent = "✓";
+        } else if (state === "in-progress") {
+          cb.classList.add("in-progress");
+          cb.textContent = "▶";
+        } else {
+          cb.textContent = "";
+        }
+      }
+
+      function applyItemStatus(item, state) {
+        const nameEl = item.querySelector(".item-name");
+        const statusEl = item.querySelector(".item-status");
+        nameEl.classList.toggle("done-text", state === "done");
+        statusEl.className = "item-status";
+        if (state === "done") {
+          statusEl.classList.add("status-done");
+          statusEl.textContent = "已完成";
+        } else if (state === "in-progress") {
+          statusEl.classList.add("status-in-progress");
+          statusEl.textContent = "进行中";
+        } else {
+          statusEl.classList.add("status-todo");
+          statusEl.textContent = "待学习";
+        }
+      }
+
+      function toggleItem(cb) {
+        const item = cb.closest(".item");
+        const id = item.dataset.id;
+        const state = loadState();
+        const cur =
+          state[id] ||
+          (cb.classList.contains("checked")
+            ? "done"
+            : cb.classList.contains("in-progress")
+              ? "in-progress"
+              : "todo");
+        const next = getNextState(cur);
+        state[id] = next;
+        saveState(state);
+        applyCheckbox(cb, next);
+        applyItemStatus(item, next);
+        recalc();
+      }
+
+      // ── 折叠模块 ────────────────────────────────────────────
+      function toggleModule(header) {
+        const list = header.nextElementSibling.nextElementSibling;
+        list.style.display = list.style.display === "none" ? "" : "none";
+      }
+
+      // ── 重新计算统计 ─────────────────────────────────────────
+      function recalc() {
+        const allItems = document.querySelectorAll(".item[data-id]");
+        const state = loadState();
+        let done = 0,
+          wip = 0,
+          todo = 0;
+
+        allItems.forEach((item) => {
+          const s = state[item.dataset.id] || "todo";
+          if (s === "done") done++;
+          else if (s === "in-progress") wip++;
+          else todo++;
+        });
+
+        const total = allItems.length;
+        document.getElementById("cnt-done").textContent = done;
+        document.getElementById("cnt-wip").textContent = wip;
+        document.getElementById("cnt-todo").textContent = todo;
+        document.getElementById("cnt-total").textContent = total;
+
+        const pct = total ? Math.round((done / total) * 100) : 0;
+        document.getElementById("global-fill").style.width = pct + "%";
+        document.getElementById("global-pct").textContent = pct + "%";
+
+        // 各模块进度条
+        const modules = [
+          {
+            listId: "list-mybatis-test",
+            metaId: "meta-mybatis-test",
+            progId: "prog-mybatis-test",
+          },
+          { listId: "list-docs", metaId: "meta-docs", progId: "prog-docs" },
+          { listId: "list-redis", metaId: "meta-redis", progId: "prog-redis" },
+          { listId: "list-kafka", metaId: "meta-kafka", progId: "prog-kafka" },
+          { listId: "list-micro", metaId: "meta-micro", progId: "prog-micro" },
+          {
+            listId: "list-integration",
+            metaId: "meta-integration",
+            progId: "prog-integration",
+          },
+        ];
+        modules.forEach((m) => {
+          const items = document.querySelectorAll(
+            "#" + m.listId + " .item[data-id]",
+          );
+          const doneN = [...items].filter(
+            (i) => (state[i.dataset.id] || "todo") === "done",
+          ).length;
+          const pctM = items.length
+            ? Math.round((doneN / items.length) * 100)
+            : 0;
+          document.getElementById(m.metaId).textContent =
+            doneN + " / " + items.length;
+          document.getElementById(m.progId).style.width = pctM + "%";
+        });
+      }
+
+      // ── 初始化：从 localStorage 恢复状态 ──────────────────────
+      function init() {
+        const state = loadState();
+
+        // 首次加载时，预设已知进度（只在 localStorage 中没有记录时写入）
+        const defaults = {
+          "sql-injection": "done",
+          "order-xml": "in-progress",
+        };
+        let changed = false;
+        Object.entries(defaults).forEach(([id, s]) => {
+          if (!state[id]) {
+            state[id] = s;
+            changed = true;
+          }
+        });
+        if (changed) saveState(state);
+
+        document.querySelectorAll(".item[data-id]").forEach((item) => {
+          const id = item.dataset.id;
+          const s = state[id] || "todo";
+          applyCheckbox(item.querySelector(".checkbox"), s);
+          applyItemStatus(item, s);
+        });
+        recalc();
+      }
+
+      init();
+    </script>
+  </body>
+</html>

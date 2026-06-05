@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.session.ExecutorType;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -69,17 +70,23 @@ class BatchInsertPerfTest {
     // ============================================================
 
     /**
-     * 每个测试方法执行前，清理上一次测试留下的数据。
+     * 每个测试方法执行后，清理本次测试残留的所有数据（兜底）。
      *
-     * 【面试考点】@BeforeEach 的作用
-     * - 每个 @Test 方法执行前都会调用一次
-     * - 用于准备测试环境（清理数据、初始化状态）
-     * - 保证每个测试方法的独立性（不受其他测试影响）
-     *
-     * 对比 @BeforeAll：
-     * - @BeforeAll：整个测试类只执行一次（需要 static 方法）
-     * - @BeforeEach：每个测试方法前都执行
+     * 【面试考点】@AfterEach 的作用
+     * - 每个 @Test 方法执行完（无论成功还是失败）都会调用
+     * - 用于清理测试产生的数据，保证数据库干净
+     * - 与 @BeforeEach 配合：前者保证"测试前干净"，后者保证"测试后干净"
      */
+    @AfterEach
+    void cleanupAfterTest() {
+        log.info("========== @AfterEach：清理本次测试残留数据 ==========");
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User> wrapper =
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        wrapper.likeRight(User::getUsername, TEST_PREFIX);
+        int deleted = userMapper.delete(wrapper);
+        log.info("@AfterEach 清理完成，删除 {} 条残留数据", deleted);
+    }
+
     @BeforeEach
     void cleanTestData() {
         log.info("========== @BeforeEach：清理测试数据 ==========");
@@ -199,6 +206,9 @@ class BatchInsertPerfTest {
         assertThat(countTestUsers("batchExec")).isEqualTo(BATCH_SIZE);
         log.info("✅ 方式3 插入验证通过：{} 条", BATCH_SIZE);
 
+        // 清理方式3的数据（@AfterEach 也会兜底，这里提前清理更明确）
+        cleanByPrefix("batchExec");
+
         // ---- 打印性能对比报告 ----
         log.info("========== 性能对比报告 ==========");
         log.info("性能对比报告：\n单条:{}ms\n批量:{}ms\nBATCH:{}ms", t1, t2, t3);
@@ -236,6 +246,7 @@ class BatchInsertPerfTest {
             user.setUsername(TEST_PREFIX + subPrefix + "_" + i);
             user.setEmail(TEST_PREFIX + subPrefix + "_" + i + "@test.com");
             user.setPhone("1380000" + String.format("%04d", i % 10000));
+            user.setPasswordHash("test_hash_placeholder");
             user.setStatus(1);
             user.setCreateTime(LocalDateTime.now());
             user.setUpdateTime(LocalDateTime.now());

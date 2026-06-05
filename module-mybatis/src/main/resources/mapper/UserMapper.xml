@@ -67,7 +67,7 @@
             ofType：集合中元素的类型
             注意：User 类需要有 List<Order> orders 字段（演示用，实际 User.java 未添加）
         -->
-        <collection property="orders" ofType="com.interview.mybatis.entity.Order">
+        <collection property="orders" javaType="java.util.List" ofType="com.interview.mybatis.entity.Order">
             <id     column="order_id"         property="id"/>
             <result column="order_user_id"    property="userId"/>
             <result column="order_product_id" property="productId"/>

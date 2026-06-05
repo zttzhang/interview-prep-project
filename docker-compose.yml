@@ -29,7 +29,7 @@ services:
   # 启动顺序：第 1 个（其他服务依赖它）
   # ===========================================================================
   postgres:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: interview-postgres
     environment:
       POSTGRES_DB: interview_prep
@@ -66,7 +66,7 @@ services:
   # 启动顺序：第 2 个（依赖 postgres healthy）
   # ===========================================================================
   redis:
-    image: redis:7
+    image: redis:6-alpine
     container_name: interview-redis
     ports:
       - "6379:6379"
@@ -91,7 +91,7 @@ services:
       start_period: 5s
     depends_on:
       postgres:
-        condition: service_healthy # 等待 postgres 健康后再启动
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -108,88 +108,30 @@ services:
   # KRaft = Kafka Raft，用 Raft 协议替代 ZooKeeper 管理集群元数据
   # ===========================================================================
   kafka:
-    image: confluentinc/cp-kafka:7.5.0
+    image: confluentinc/cp-kafka:7.6.0
     container_name: interview-kafka
     ports:
       - "9092:9092"
     environment:
-      # -----------------------------------------------------------------------
-      # KRaft 模式必须配置项
-      # -----------------------------------------------------------------------
-
-      # 节点 ID，集群内唯一，单节点固定为 1
       KAFKA_NODE_ID: 1
-
-      # 节点角色：同时作为 broker（处理消息）和 controller（管理元数据）
-      # 【面试追问】生产环境建议 broker 和 controller 分离，避免单点故障
       KAFKA_PROCESS_ROLES: broker,controller
-
-      # 集群 ID：base64 编码的 UUID，同一集群所有节点必须相同
-      # 生成方式：kafka-storage.sh random-uuid | base64
-      # 注意：一旦设置不能更改，否则需要清空数据目录重新初始化
       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qg=="
-
-      # Controller 选举投票者：格式为 nodeId@host:port
-      # 单节点：只有自己参与投票
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-
-      # -----------------------------------------------------------------------
-      # 监听器配置
-      # -----------------------------------------------------------------------
-
-      # 监听地址：PLAINTEXT 用于客户端连接，CONTROLLER 用于集群内部通信
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-
-      # 对外广播地址：客户端通过此地址连接 Kafka
-      # 【面试考点】LISTENERS vs ADVERTISED_LISTENERS 的区别：
-      # LISTENERS：Kafka 实际监听的地址（0.0.0.0 表示所有网卡）
-      # ADVERTISED_LISTENERS：告诉客户端"来这个地址连我"
-      # 容器内用 kafka:9092，宿主机用 localhost:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-
-      # 监听器安全协议映射
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-
-      # Controller 使用的监听器名称
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-
-      # -----------------------------------------------------------------------
-      # Topic 和复制配置（单节点开发环境）
-      # -----------------------------------------------------------------------
-
-      # 内部 topic（__consumer_offsets）的副本数
-      # 【面试考点】生产环境应设为 3（3 副本），开发环境设为 1
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
-      # 事务状态 topic 的副本数
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-
-      # 事务状态 topic 的最小 ISR（In-Sync Replicas）数
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-
-      # 自动创建 topic（开发环境方便，生产环境建议关闭）
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-
-      # -----------------------------------------------------------------------
-      # 日志和性能配置
-      # -----------------------------------------------------------------------
-
-      # 日志保留时间（小时）
-      KAFKA_LOG_RETENTION_HOURS: 168 # 7 天
-
-      # 单个日志段文件大小（字节）：100MB
+      KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_LOG_SEGMENT_BYTES: 104857600
-
-      # 日志目录
       KAFKA_LOG_DIRS: /var/lib/kafka/data
-
-      # 默认分区数（面试考点：分区数影响并发消费能力）
       KAFKA_NUM_PARTITIONS: 3
-
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
-      # 通过 kafka-topics 命令检查 Kafka 是否就绪
       test:
         [
           "CMD",
@@ -201,10 +143,10 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
-      start_period: 30s # Kafka 启动较慢，给予 30 秒预热时间
+      start_period: 30s
     depends_on:
       redis:
-        condition: service_healthy # 等待 redis 健康后再启动
+        condition: service_healthy
     deploy:
       resources:
         limits:
